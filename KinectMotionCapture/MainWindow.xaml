@@ -1,0 +1,20 @@
+﻿<Window x:Class="KinectMotionCapture.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:KinectMotionCapture"
+        Title="Kinect Motion Capture" Width="850" ResizeMode="NoResize" WindowStartupLocation="CenterScreen" Background="#FFDEDEDE" Loaded="Window_Loaded" SizeToContent="Height" Closing="Window_Closing">
+    <Grid>
+        <Border BorderBrush="Black" BorderThickness="1" VerticalAlignment="Top" HorizontalAlignment="Right" Background="White" Margin="10,10,10,10" Height="480" Width="640">
+            <Grid>
+                <Image x:Name="camera" HorizontalAlignment="Right" Height="480" VerticalAlignment="Top" Width="640"/>
+                <Canvas x:Name="canvas" HorizontalAlignment="Right" Height="480" VerticalAlignment="Top" Width="640"/>
+            </Grid>
+        </Border>
+        <Button x:Name="button_rec" Content="Start recording" HorizontalAlignment="Left" Margin="10,118,0,0" VerticalAlignment="Top" Width="92" Click="button_rec_Click"/>
+        <Button x:Name="button_screenshot" Content="Save screenshot" HorizontalAlignment="Left" Margin="10,186,0,0" VerticalAlignment="Top" Width="102" Click="button_screenshot_Click"/>
+        <Button x:Name="button_setBody" Content="Set body" HorizontalAlignment="Left" Margin="10,32,0,0" VerticalAlignment="Top" Width="75" FontWeight="Bold" Click="button_setBody_Click"/>
+        <TextBox x:Name="textBox" HorizontalAlignment="Left" Height="145" Margin="10,306,0,0" TextWrapping="Wrap" VerticalAlignment="Top" Width="128"/>
+    </Grid>
+</Window>
