@@ -1,6 +1,6 @@
 # KinectMotionCapture
 
-[![DOI](https://zenodo.org/badge/doi/10.5281/zenodo.58077.svg)](http://dx.doi.org/10.5281/zenodo.58077)
+[![Build Status](https://travis-ci.org/apalkowski/KinectMotionCapture.svg?branch=master)](https://travis-ci.org/apalkowski/KinectMotionCapture) [![DOI](https://zenodo.org/badge/doi/10.5281/zenodo.58077.svg)](http://dx.doi.org/10.5281/zenodo.58077)
 
 A simple software for capturing human body movements using the Kinect camera. The software can seamlessly save joints and bones positions for further analysis.
 
