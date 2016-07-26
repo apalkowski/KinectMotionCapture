@@ -4,7 +4,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:KinectMotionCapture"
-        Title="Kinect Motion Capture" Width="850" ResizeMode="NoResize" WindowStartupLocation="CenterScreen" Background="#FFDEDEDE" Loaded="Window_Loaded" SizeToContent="Height" Closing="Window_Closing">
+        Title="KinectMotionCapture" Width="865" ResizeMode="NoResize" WindowStartupLocation="CenterScreen" Background="#FFDEDEDE" SizeToContent="Height" Closing="Window_Closing" Icon="KinectMotionCapture.ico">
     <Grid>
         <Border BorderBrush="Black" BorderThickness="1" VerticalAlignment="Top" HorizontalAlignment="Right" Background="White" Margin="10,10,10,10" Height="480" Width="640">
             <Grid>
@@ -12,9 +12,23 @@
                 <Canvas x:Name="canvas" HorizontalAlignment="Right" Height="480" VerticalAlignment="Top" Width="640"/>
             </Grid>
         </Border>
-        <Button x:Name="button_rec" Content="Start recording" HorizontalAlignment="Left" Margin="10,118,0,0" VerticalAlignment="Top" Width="92" Click="button_rec_Click"/>
-        <Button x:Name="button_screenshot" Content="Save screenshot" HorizontalAlignment="Left" Margin="10,186,0,0" VerticalAlignment="Top" Width="102" Click="button_screenshot_Click"/>
-        <Button x:Name="button_setBody" Content="Set body" HorizontalAlignment="Left" Margin="10,32,0,0" VerticalAlignment="Top" Width="75" FontWeight="Bold" Click="button_setBody_Click"/>
-        <TextBox x:Name="textBox" HorizontalAlignment="Left" Height="145" Margin="10,306,0,0" TextWrapping="Wrap" VerticalAlignment="Top" Width="128"/>
+        <Button x:Name="button_rec" Content="Start recording" HorizontalAlignment="Left" Margin="10,84,0,0" VerticalAlignment="Top" Click="button_rec_Click" IsEnabled="False" Padding="5,1"/>
+        <Button x:Name="button_screenshot" Content="Save screenshot" HorizontalAlignment="Left" Margin="10,121,0,0" VerticalAlignment="Top" Click="button_screenshot_Click" IsEnabled="False" Padding="5,1"/>
+        <Button x:Name="button_setBody" Content="Set body" HorizontalAlignment="Left" Margin="10,47,0,0" VerticalAlignment="Top" Click="button_setBody_Click" IsEnabled="False" Padding="5,1"/>
+        <GroupBox x:Name="groupBox_smoothParams" Header="Kinect smoothing parameters" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="10,0,0,10" Width="176" Height="306">
+            <Grid>
+                <TextBox x:Name="textBox_smoothing" HorizontalAlignment="Left" Height="23" Margin="10,36,0,0" TextWrapping="Wrap" Text="0.2" VerticalAlignment="Top" Width="125"/>
+                <Label x:Name="label_smoothing" Content="Smoothing:" HorizontalAlignment="Left" Margin="10,10,0,0" VerticalAlignment="Top" Padding="0,5,5,5"/>
+                <Label x:Name="label_correction" Content="Correction:" HorizontalAlignment="Left" Margin="10,64,0,0" VerticalAlignment="Top" Padding="0,5,5,5"/>
+                <TextBox x:Name="textBox_correction" HorizontalAlignment="Left" Height="23" Margin="10,90,0,0" TextWrapping="Wrap" Text="0.1" VerticalAlignment="Top" Width="125"/>
+                <Label x:Name="label_prediction" Content="Prediction:" HorizontalAlignment="Left" Margin="10,118,0,0" VerticalAlignment="Top" Padding="0,5,5,5"/>
+                <TextBox x:Name="textBox_prediction" HorizontalAlignment="Left" Height="23" Margin="10,144,0,0" TextWrapping="Wrap" Text="0.5" VerticalAlignment="Top" Width="125"/>
+                <Label x:Name="label_jitterRadius" Content="Jitter radius:" HorizontalAlignment="Left" Margin="10,172,0,0" VerticalAlignment="Top" Padding="0,5,5,5"/>
+                <TextBox x:Name="textBox_jitterRadius" HorizontalAlignment="Left" Height="23" Margin="10,198,0,0" TextWrapping="Wrap" Text="0.06" VerticalAlignment="Top" Width="125"/>
+                <Label x:Name="label_maxDeviationRadius" Content="Max. deviation radius:" HorizontalAlignment="Left" Margin="10,226,0,0" VerticalAlignment="Top" Padding="0,5,5,5"/>
+                <TextBox x:Name="textBox_maxDeviationRadius" HorizontalAlignment="Left" Margin="10,252,0,0" TextWrapping="Wrap" Text="0.06" Width="125" Height="23" VerticalAlignment="Top"/>
+            </Grid>
+        </GroupBox>
+        <Button x:Name="button_kinect" Content="Start motion capture" HorizontalAlignment="Left" Margin="10,10,0,0" VerticalAlignment="Top" Click="button_kinect_Click" Padding="5,1"/>
     </Grid>
 </Window>

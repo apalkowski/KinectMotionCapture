@@ -5,25 +5,25 @@ namespace KinectMotionCapture
 {
     internal class BonePositions
     {
-        public List<string> timestamp;
-        public JointType startJoint;
-        public JointType endJoint;
-        public List<Matrix4> absMatrix;
-        public List<Vector4> absQuaternion;
-        public List<Matrix4> hierMatrix;
-        public List<Vector4> hierQuaternion;
-        public List<int> coordinateType;
+        public JointType StartJoint;
+        public JointType EndJoint;
+        public List<string> Timestamp;
+        public List<Matrix4> AbsMatrix;
+        public List<Vector4> AbsQuaternion;
+        public List<Matrix4> HierMatrix;
+        public List<Vector4> HierQuaternion;
+        public List<int> CoordinateType;
 
         public BonePositions(JointType startJoint, JointType endJoint)
         {
-            this.startJoint = startJoint;
-            this.endJoint = endJoint;
-            this.timestamp = new List<string>();
-            this.absMatrix = new List<Matrix4>();
-            this.absQuaternion = new List<Vector4>();
-            this.hierMatrix = new List<Matrix4>();
-            this.hierQuaternion = new List<Vector4>();
-            this.coordinateType = new List<int>();
+            StartJoint = startJoint;
+            EndJoint = endJoint;
+            Timestamp = new List<string>();
+            AbsMatrix = new List<Matrix4>();
+            AbsQuaternion = new List<Vector4>();
+            HierMatrix = new List<Matrix4>();
+            HierQuaternion = new List<Vector4>();
+            CoordinateType = new List<int>();
         }
     }
 }

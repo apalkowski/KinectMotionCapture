@@ -1,7 +1,6 @@
 ﻿using System;
 using System.IO;
 using System.Linq;
-using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
@@ -14,39 +13,54 @@ namespace KinectMotionCapture
 {
     public partial class MainWindow : Window
     {
+        private const int BonesNumber = 20;
         private const int JointsNumber = 20;
+        private const int KinectElevationAngle = 0;
+        private const int TrackedCoordinate = 1;
+        private const int InferredCoordinate = 2;
+        private const int HalfInferredCoordinate = 3;
         private const double BoneThickness = 3.0;
         private const double JointDiameter = 10.0;
+        private const double ScreenshotDpiX = 300.0;
+        private const double ScreenshotDpiY = 300.0;
+        private const double StreamDpiX = 96.0;
+        private const double StreamDpiY = 96.0;
+        private const string TimestampFormat = "yyyy-MM-ddTHH:mm:ss.fff";
+        private const ColorImageFormat ColorStreamFormat = ColorImageFormat.RgbResolution640x480Fps30;
+        private const DepthImageFormat DepthStreamFormat = DepthImageFormat.Resolution640x480Fps30;
 
-        private const int KinectElevationAngle = 0;
-
-        private readonly Brush trackedJointBrush = Brushes.Green;
-        private readonly Brush inferredJointBrush = Brushes.Yellow;
-
-        private readonly Pen trackedBonePen = new Pen(Brushes.Green, 6.0);
-        private readonly Pen inferredBonePen = new Pen(Brushes.Yellow, 1.0);
-
-        private KinectSensor _kinect;
-        private Skeleton[] _skeletons = new Skeleton[6];
-
-        private bool _isRecording = false;
-
-        private JointType[] _jointTypeRev =
+        private readonly Brush TrackedJointBrush = Brushes.Green;
+        private readonly Brush InferredJointBrush = Brushes.Yellow;
+        private readonly Brush TrackedBoneBrush = Brushes.Green;
+        private readonly Brush HalfInferredBoneBrush = Brushes.Yellow;
+        private readonly Brush InferredBoneBrush = Brushes.Red;
+        private readonly JointType[] JointTypeRev =
             {JointType.HipCenter, JointType.Spine, JointType.ShoulderCenter, JointType.Head,
             JointType.ShoulderLeft, JointType.ElbowLeft, JointType.WristLeft, JointType.HandLeft,
             JointType.ShoulderRight, JointType.ElbowRight, JointType.WristRight, JointType.HandRight,
             JointType.HipLeft, JointType.KneeLeft, JointType.AnkleLeft, JointType.FootLeft,
             JointType.HipRight, JointType.KneeRight, JointType.AnkleRight, JointType.FootRight};
 
+        private KinectSensor _kinect;
+        private Skeleton[] _skeletons;
+
         private JointPositions[] _jointHistory;
         private BonePositions[] _boneHistory;
+
+        private bool _isRunning = false;
+        private bool _isRecording = false;
 
         public MainWindow()
         {
             InitializeComponent();
         }
 
-        private void Window_Loaded(object sender, RoutedEventArgs e)
+        private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
+        {
+            StopKinect();
+        }
+
+        private bool RunKinect()
         {
             _kinect = KinectSensor.KinectSensors.Where(s => s.Status == KinectStatus.Connected).FirstOrDefault();
 
@@ -54,40 +68,50 @@ namespace KinectMotionCapture
             {
                 TransformSmoothParameters smoothingParam = new TransformSmoothParameters();
                 {
-                    smoothingParam.Smoothing = 0.2f;
-                    smoothingParam.Correction = 0.1f;
-                    smoothingParam.Prediction = 0.5f;
-                    smoothingParam.JitterRadius = 0.06f;
-                    smoothingParam.MaxDeviationRadius = 0.06f;
+                    smoothingParam.Smoothing = Convert.ToSingle(textBox_smoothing.Text);
+                    smoothingParam.Correction = Convert.ToSingle(textBox_correction.Text);
+                    smoothingParam.Prediction = Convert.ToSingle(textBox_prediction.Text);
+                    smoothingParam.JitterRadius = Convert.ToSingle(textBox_jitterRadius.Text);
+                    smoothingParam.MaxDeviationRadius = Convert.ToSingle(textBox_maxDeviationRadius.Text);
                 };
 
-                _kinect.ColorStream.Enable();
-                _kinect.DepthStream.Enable();
+                _kinect.ColorStream.Enable(ColorStreamFormat);
+                _kinect.DepthStream.Enable(DepthStreamFormat);
                 _kinect.SkeletonStream.Enable(smoothingParam);
 
-                _kinect.AllFramesReady += Sensor_AllFramesReady;
+                _kinect.AllFramesReady += Kinect_AllFramesReady;
 
                 _kinect.Start();
 
                 _kinect.ElevationAngle = KinectElevationAngle;
+
+                return true;
+            }
+            else
+            {
+                return false;
             }
         }
 
-        private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
+        private void StopKinect()
         {
             if (_kinect != null)
             {
                 _kinect.Stop();
+                _kinect = null;
             }
+
+            canvas.Children.Clear();
+            camera.Source = null;
         }
 
-        private void Sensor_AllFramesReady(object sender, AllFramesReadyEventArgs e)
+        private void Kinect_AllFramesReady(object sender, AllFramesReadyEventArgs e)
         {
             using (ColorImageFrame frame = e.OpenColorImageFrame())
             {
                 if (frame != null)
                 {
-                    camera.Source = ColorFrameConverter.CovertToBitmap(frame);
+                    camera.Source = ColorFrameConverter.CovertToBitmap(frame, StreamDpiX, StreamDpiY);
                 }
             }
 
@@ -99,7 +123,7 @@ namespace KinectMotionCapture
 
                     _skeletons = new Skeleton[frame.SkeletonArrayLength];
                     frame.CopySkeletonDataTo(_skeletons);
-                    
+
                     foreach (var skeleton in _skeletons)
                     {
                         if (skeleton.TrackingState == SkeletonTrackingState.Tracked)
@@ -108,183 +132,143 @@ namespace KinectMotionCapture
                         }
                     }
 
-                    // https://msdn.microsoft.com/en-us/library/jj663790.aspx
-                    Vector4 acc = _kinect.AccelerometerGetCurrentReading();
-                    var floorClipPlane = frame.FloorClipPlane;
-                    textBox.Text = "acc_x: " + acc.X.ToString() + "\n" + "acc_y: " + acc.Y.ToString() + "\n" + "acc_z: " + acc.Z.ToString() + "\n" + "acc_w: " + acc.W.ToString() + "\n" + "floor_x: " + floorClipPlane.Item1.ToString() + "\n" + "floor_y: " + floorClipPlane.Item2.ToString() + "\n" + "floor_z: " + floorClipPlane.Item3.ToString() + "\n" + "floor_w: " + floorClipPlane.Item4.ToString() + "\n";
+                    _skeletons = null;
                 }
             }
         }
 
         private void DrawBonesAndJoints(Skeleton skeleton)
         {
-            string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.ffff");
+            string timestamp = DateTime.Now.ToString(TimestampFormat);
 
-            DrawBone(skeleton, JointType.HipCenter, JointType.HipCenter, timestamp);
-            
-            DrawBone(skeleton, JointType.Head, JointType.ShoulderCenter, timestamp);
-            DrawBone(skeleton, JointType.ShoulderCenter, JointType.ShoulderLeft, timestamp);
-            DrawBone(skeleton, JointType.ShoulderCenter, JointType.ShoulderRight, timestamp);
-            DrawBone(skeleton, JointType.ShoulderCenter, JointType.Spine, timestamp);
-            DrawBone(skeleton, JointType.Spine, JointType.HipCenter, timestamp);
-            DrawBone(skeleton, JointType.HipCenter, JointType.HipLeft, timestamp);
-            DrawBone(skeleton, JointType.HipCenter, JointType.HipRight, timestamp);
-            
-            DrawBone(skeleton, JointType.ShoulderLeft, JointType.ElbowLeft, timestamp);
-            DrawBone(skeleton, JointType.ElbowLeft, JointType.WristLeft, timestamp);
-            DrawBone(skeleton, JointType.WristLeft, JointType.HandLeft, timestamp);
-            
-            DrawBone(skeleton, JointType.ShoulderRight, JointType.ElbowRight, timestamp);
-            DrawBone(skeleton, JointType.ElbowRight, JointType.WristRight, timestamp);
-            DrawBone(skeleton, JointType.WristRight, JointType.HandRight, timestamp);
-            
-            DrawBone(skeleton, JointType.HipLeft, JointType.KneeLeft, timestamp);
-            DrawBone(skeleton, JointType.KneeLeft, JointType.AnkleLeft, timestamp);
-            DrawBone(skeleton, JointType.AnkleLeft, JointType.FootLeft, timestamp);
-            
-            DrawBone(skeleton, JointType.HipRight, JointType.KneeRight, timestamp);
-            DrawBone(skeleton, JointType.KneeRight, JointType.AnkleRight, timestamp);
-            DrawBone(skeleton, JointType.AnkleRight, JointType.FootRight, timestamp);
+            foreach (BoneOrientation bone in skeleton.BoneOrientations)
+            {
+                DrawBone(skeleton, bone, timestamp);
+            }
 
             foreach (Joint joint in skeleton.Joints)
             {
-                SkeletonPoint skeletonPoint = joint.Position;
-                ColorImagePoint colorPoint = _kinect.CoordinateMapper.MapSkeletonPointToColorPoint(skeletonPoint, ColorImageFormat.RgbResolution640x480Fps30);
-                Point point = new Point(colorPoint.X, colorPoint.Y);
-
-                Brush drawBrush = null;
-                int coordinateType = 0;
-
-                if (joint.TrackingState == JointTrackingState.Tracked)
-                {
-                    drawBrush = trackedJointBrush;
-                    coordinateType = 1;
-                }
-                else if (joint.TrackingState == JointTrackingState.Inferred)
-                {
-                    drawBrush = inferredJointBrush;
-                    coordinateType = 2;
-                }
-
-                if (drawBrush != null)
-                {
-                    Ellipse ellipse = new Ellipse
-                    {
-                        Fill = drawBrush,
-                        Width = JointDiameter,
-                        Height = JointDiameter
-                    };
-
-                    Canvas.SetLeft(ellipse, colorPoint.X - ellipse.Width / 2);
-                    Canvas.SetTop(ellipse, colorPoint.Y - ellipse.Height / 2);
-
-                    canvas.Children.Add(ellipse);
-
-                    if (_isRecording)
-                    {
-                        for (int i = 0; i < JointsNumber; i++)
-                        {
-                            if (joint.JointType == _jointHistory[i].type)
-                            {
-                                _jointHistory[i].coordinates.Add(joint.Position);
-                                _jointHistory[i].coordinateType.Add(coordinateType);
-                                _jointHistory[i].timestamp.Add(timestamp);
-                                break;
-                            }
-                        }
-                    }
-                }
+                DrawJoint(joint, timestamp);
             }
         }
 
-        private void DrawBone(Skeleton skeleton, JointType jointType1, JointType jointType2, string timestamp)
+        private void DrawBone(Skeleton skeleton, BoneOrientation bone, string timestamp)
         {
-            Joint joint1 = skeleton.Joints[jointType1];
-            Joint joint2 = skeleton.Joints[jointType2];
+            Joint startJoint = skeleton.Joints[bone.StartJoint];
+            Joint endJoint = skeleton.Joints[bone.EndJoint];
 
-            SkeletonPoint skeletonPoint1 = joint1.Position;
-            ColorImagePoint colorPoint1 = _kinect.CoordinateMapper.MapSkeletonPointToColorPoint(skeletonPoint1, ColorImageFormat.RgbResolution640x480Fps30);
-            SkeletonPoint skeletonPoint2 = joint2.Position;
-            ColorImagePoint colorPoint2 = _kinect.CoordinateMapper.MapSkeletonPointToColorPoint(skeletonPoint2, ColorImageFormat.RgbResolution640x480Fps30);
+            Brush drawBrush = null;
+            int coordinateType = 0;
 
-            if (joint1.TrackingState == JointTrackingState.NotTracked ||
-                joint2.TrackingState == JointTrackingState.NotTracked)
+            if (startJoint.TrackingState == JointTrackingState.NotTracked || endJoint.TrackingState == JointTrackingState.NotTracked)
             {
                 return;
             }
-
-            if (joint1.TrackingState == JointTrackingState.Inferred &&
-                joint2.TrackingState == JointTrackingState.Inferred)
+            else if (startJoint.TrackingState == JointTrackingState.Tracked && endJoint.TrackingState == JointTrackingState.Tracked)
             {
-                return;
+                drawBrush = TrackedBoneBrush;
+                coordinateType = TrackedCoordinate;
+            }
+            else if (startJoint.TrackingState == JointTrackingState.Inferred && endJoint.TrackingState == JointTrackingState.Inferred)
+            {
+                drawBrush = InferredBoneBrush;
+                coordinateType = InferredCoordinate;
+            }
+            else
+            {
+                drawBrush = HalfInferredBoneBrush;
+                coordinateType = HalfInferredCoordinate;
             }
 
-            Brush drawBrush = inferredJointBrush;
-            int coordinateType = 2;
+            ColorImagePoint startJointColorPoint = _kinect.CoordinateMapper.MapSkeletonPointToColorPoint(startJoint.Position, ColorStreamFormat);
+            ColorImagePoint endJointColorPoint = _kinect.CoordinateMapper.MapSkeletonPointToColorPoint(endJoint.Position, ColorStreamFormat);
 
-            if (joint1.TrackingState == JointTrackingState.Tracked && joint2.TrackingState == JointTrackingState.Tracked)
-            {
-                drawBrush = trackedJointBrush;
-                coordinateType = 1;
-            }
-
-            Line line = new Line
+            var line = new Line
             {
                 Stroke = drawBrush,
                 StrokeThickness = BoneThickness,
-                X1 = colorPoint1.X,
-                Y1 = colorPoint1.Y,
-                X2 = colorPoint2.X,
-                Y2 = colorPoint2.Y
+                X1 = startJointColorPoint.X,
+                Y1 = startJointColorPoint.Y,
+                X2 = endJointColorPoint.X,
+                Y2 = endJointColorPoint.Y
             };
 
             canvas.Children.Add(line);
 
             if (_isRecording)
             {
-                for (int i = 0; i < JointsNumber; i++)
+                SaveBoneData(bone, timestamp, coordinateType);
+            }
+        }
+
+        private void DrawJoint(Joint joint, string timestamp)
+        {
+            Brush drawBrush = null;
+            int coordinateType = 0;
+
+            if (joint.TrackingState == JointTrackingState.Tracked)
+            {
+                drawBrush = TrackedJointBrush;
+                coordinateType = TrackedCoordinate;
+            }
+            else if (joint.TrackingState == JointTrackingState.Inferred)
+            {
+                drawBrush = InferredJointBrush;
+                coordinateType = InferredCoordinate;
+            }
+            else
+            {
+                return;
+            }
+
+            Ellipse ellipse = new Ellipse
+            {
+                Fill = drawBrush,
+                Width = JointDiameter,
+                Height = JointDiameter
+            };
+
+            ColorImagePoint jointColorPoint = _kinect.CoordinateMapper.MapSkeletonPointToColorPoint(joint.Position, ColorStreamFormat);
+
+            Canvas.SetLeft(ellipse, jointColorPoint.X - ellipse.Width / 2);
+            Canvas.SetTop(ellipse, jointColorPoint.Y - ellipse.Height / 2);
+
+            canvas.Children.Add(ellipse);
+
+            if (_isRecording)
+            {
+                SaveJointData(joint, timestamp, coordinateType);
+            }
+        }
+
+        private void SaveJointData(Joint joint, string timestamp, int coordinateType)
+        {
+            foreach (var jointPosition in _jointHistory)
+            {
+                if (joint.JointType == jointPosition.Type)
                 {
-                    if ((joint1.JointType == _boneHistory[i].startJoint || joint1.JointType == _boneHistory[i].endJoint) && (joint2.JointType == _boneHistory[i].startJoint || joint2.JointType == _boneHistory[i].endJoint))
-                    {
-                        _boneHistory[i].timestamp.Add(timestamp);
-                        _boneHistory[i].absMatrix.Add(skeleton.BoneOrientations[_jointTypeRev[i]].AbsoluteRotation.Matrix);
-                        _boneHistory[i].absQuaternion.Add(skeleton.BoneOrientations[_jointTypeRev[i]].AbsoluteRotation.Quaternion);
-                        _boneHistory[i].hierMatrix.Add(skeleton.BoneOrientations[_jointTypeRev[i]].HierarchicalRotation.Matrix);
-                        _boneHistory[i].hierQuaternion.Add(skeleton.BoneOrientations[_jointTypeRev[i]].HierarchicalRotation.Quaternion);
-                        _boneHistory[i].coordinateType.Add(coordinateType);
-                        break;
-                    }
+                    jointPosition.Timestamp.Add(timestamp);
+                    jointPosition.Coordinates.Add(joint.Position);
+                    jointPosition.CoordinateType.Add(coordinateType);
+                    break;
                 }
             }
         }
 
-        private static class ColorFrameConverter
+        private void SaveBoneData(BoneOrientation bone, string timestamp, int coordinateType)
         {
-            private static WriteableBitmap _bitmap = null;
-            private static int _width;
-            private static int _height;
-            private static byte[] _pixels = null;
-
-            public static BitmapSource CovertToBitmap(ColorImageFrame frame)
+            foreach (var bonePosition in _boneHistory)
             {
-                if (_bitmap == null)
+                if (bone.StartJoint == bonePosition.StartJoint && bone.EndJoint == bonePosition.EndJoint)
                 {
-                    _width = frame.Width;
-                    _height = frame.Height;
-                    _pixels = new byte[_width * _height * ((PixelFormats.Bgr32.BitsPerPixel + 7) / 8)];
-                    _bitmap = new WriteableBitmap(_width, _height, 96.0, 96.0, PixelFormats.Bgr32, null);
+                    bonePosition.Timestamp.Add(timestamp);
+                    bonePosition.AbsMatrix.Add(bone.AbsoluteRotation.Matrix);
+                    bonePosition.AbsQuaternion.Add(bone.AbsoluteRotation.Quaternion);
+                    bonePosition.HierMatrix.Add(bone.HierarchicalRotation.Matrix);
+                    bonePosition.HierQuaternion.Add(bone.HierarchicalRotation.Quaternion);
+                    bonePosition.CoordinateType.Add(coordinateType);
+                    break;
                 }
-
-                frame.CopyPixelDataTo(_pixels);
-
-                _bitmap.Lock();
-
-                Marshal.Copy(_pixels, 0, _bitmap.BackBuffer, _pixels.Length);
-                _bitmap.AddDirtyRect(new Int32Rect(0, 0, _width, _height));
-
-                _bitmap.Unlock();
-
-                return _bitmap;
             }
         }
 
@@ -293,36 +277,38 @@ namespace KinectMotionCapture
             if (!_isRecording)
             {
                 _jointHistory = new JointPositions[JointsNumber];
-                _boneHistory = new BonePositions[JointsNumber];
+                _boneHistory = new BonePositions[BonesNumber];
+
                 for (int i = 0; i < JointsNumber; i++)
                 {
-                    _jointHistory[i] = new JointPositions(_jointTypeRev[i]);
+                    _jointHistory[i] = new JointPositions(JointTypeRev[i]);
                 }
-                _boneHistory[0] = new BonePositions(_jointTypeRev[0], _jointTypeRev[0]);
-                _boneHistory[1] = new BonePositions(_jointTypeRev[0], _jointTypeRev[1]);
-                _boneHistory[2] = new BonePositions(_jointTypeRev[1], _jointTypeRev[2]);
-                _boneHistory[3] = new BonePositions(_jointTypeRev[2], _jointTypeRev[3]);
 
-                _boneHistory[4] = new BonePositions(_jointTypeRev[2], _jointTypeRev[4]);
-                _boneHistory[5] = new BonePositions(_jointTypeRev[4], _jointTypeRev[5]);
-                _boneHistory[6] = new BonePositions(_jointTypeRev[5], _jointTypeRev[6]);
-                _boneHistory[7] = new BonePositions(_jointTypeRev[6], _jointTypeRev[7]);
+                _boneHistory[0] = new BonePositions(JointTypeRev[0], JointTypeRev[0]);
+                _boneHistory[1] = new BonePositions(JointTypeRev[0], JointTypeRev[1]);
+                _boneHistory[2] = new BonePositions(JointTypeRev[1], JointTypeRev[2]);
+                _boneHistory[3] = new BonePositions(JointTypeRev[2], JointTypeRev[3]);
 
-                _boneHistory[8] = new BonePositions(_jointTypeRev[2], _jointTypeRev[8]);
-                _boneHistory[9] = new BonePositions(_jointTypeRev[8], _jointTypeRev[9]);
-                _boneHistory[10] = new BonePositions(_jointTypeRev[9], _jointTypeRev[10]);
-                _boneHistory[11] = new BonePositions(_jointTypeRev[10], _jointTypeRev[11]);
+                _boneHistory[4] = new BonePositions(JointTypeRev[2], JointTypeRev[4]);
+                _boneHistory[5] = new BonePositions(JointTypeRev[4], JointTypeRev[5]);
+                _boneHistory[6] = new BonePositions(JointTypeRev[5], JointTypeRev[6]);
+                _boneHistory[7] = new BonePositions(JointTypeRev[6], JointTypeRev[7]);
 
-                _boneHistory[12] = new BonePositions(_jointTypeRev[0], _jointTypeRev[12]);
-                _boneHistory[13] = new BonePositions(_jointTypeRev[12], _jointTypeRev[13]);
-                _boneHistory[14] = new BonePositions(_jointTypeRev[13], _jointTypeRev[14]);
-                _boneHistory[15] = new BonePositions(_jointTypeRev[14], _jointTypeRev[15]);
+                _boneHistory[8] = new BonePositions(JointTypeRev[2], JointTypeRev[8]);
+                _boneHistory[9] = new BonePositions(JointTypeRev[8], JointTypeRev[9]);
+                _boneHistory[10] = new BonePositions(JointTypeRev[9], JointTypeRev[10]);
+                _boneHistory[11] = new BonePositions(JointTypeRev[10], JointTypeRev[11]);
 
-                _boneHistory[16] = new BonePositions(_jointTypeRev[0], _jointTypeRev[16]);
-                _boneHistory[17] = new BonePositions(_jointTypeRev[16], _jointTypeRev[17]);
-                _boneHistory[18] = new BonePositions(_jointTypeRev[17], _jointTypeRev[18]);
-                _boneHistory[19] = new BonePositions(_jointTypeRev[18], _jointTypeRev[19]);
-                
+                _boneHistory[12] = new BonePositions(JointTypeRev[0], JointTypeRev[12]);
+                _boneHistory[13] = new BonePositions(JointTypeRev[12], JointTypeRev[13]);
+                _boneHistory[14] = new BonePositions(JointTypeRev[13], JointTypeRev[14]);
+                _boneHistory[15] = new BonePositions(JointTypeRev[14], JointTypeRev[15]);
+
+                _boneHistory[16] = new BonePositions(JointTypeRev[0], JointTypeRev[16]);
+                _boneHistory[17] = new BonePositions(JointTypeRev[16], JointTypeRev[17]);
+                _boneHistory[18] = new BonePositions(JointTypeRev[17], JointTypeRev[18]);
+                _boneHistory[19] = new BonePositions(JointTypeRev[18], JointTypeRev[19]);
+
                 button_rec.Content = "Stop recording";
                 button_rec.Foreground = Brushes.Red;
                 button_rec.FontWeight = FontWeights.Bold;
@@ -332,96 +318,116 @@ namespace KinectMotionCapture
             {
                 Directory.CreateDirectory("data");
 
-                for (int i = 0; i < JointsNumber; i++)
+                var csv = new StringBuilder();
+                string filePath;
+                string header;
+
+                foreach (var jointPosition in _jointHistory)
                 {
-                    var csv = new StringBuilder();
-                    string filePath = Directory.GetCurrentDirectory() + "\\data\\joint-" + _jointHistory[i].type.ToString() + ".dat";
-                    var header = string.Format("{0};{1};{2};{3};{4}{5}", "timestamp", "x", "y", "z", "coord_type", Environment.NewLine);
-                    csv.Append(header);
-
-                    for (int j = 0; j < _jointHistory[i].timestamp.Count; j++)
+                    if (jointPosition.Timestamp.Count > 0)
                     {
-                        string time = _jointHistory[i].timestamp[j];
-                        string x = _jointHistory[i].coordinates[j].X.ToString();
-                        string y = _jointHistory[i].coordinates[j].Y.ToString();
-                        string z = _jointHistory[i].coordinates[j].Z.ToString();
-                        string type = _jointHistory[i].coordinateType[j].ToString();
-                        var data = string.Format("{0};{1};{2};{3};{4}{5}", time, x, y, z, type, Environment.NewLine);
-                        csv.Append(data);
+                        csv = new StringBuilder();
+                        string firstTimestamp = jointPosition.Timestamp[0].ToString().Replace("-", "").Replace(":", "");
+                        filePath = Directory.GetCurrentDirectory() + "\\data\\" + firstTimestamp + "-joint-" + jointPosition.Type.ToString() + ".csv";
+                        header = string.Format("{0},{1},{2},{3},{4}{5}", "timestamp", "x", "y", "z", "coord_type", Environment.NewLine);
+                        csv.Append(header);
+
+                        for (int j = 0; j < jointPosition.Timestamp.Count; j++)
+                        {
+                            string timestamp = jointPosition.Timestamp[j];
+
+                            string x = jointPosition.Coordinates[j].X.ToString();
+                            string y = jointPosition.Coordinates[j].Y.ToString();
+                            string z = jointPosition.Coordinates[j].Z.ToString();
+
+                            string type = jointPosition.CoordinateType[j].ToString();
+
+                            var data = string.Format("{0},{1},{2},{3},{4}{5}", timestamp, x, y, z, type, Environment.NewLine);
+                            csv.Append(data);
+                        }
+
+                        File.WriteAllText(filePath, csv.ToString());
+                        csv = null;
                     }
+                }
 
-                    File.WriteAllText(filePath, csv.ToString());
-
-                    var csvBones = new StringBuilder();
-                    string filePathBones = Directory.GetCurrentDirectory() + "\\data\\bone-" + _boneHistory[i].startJoint.ToString() + "-" + _boneHistory[i].endJoint.ToString() + ".dat";
-                    var headerBones =
-                        string.Format("{0};{1};{2};{3};{4};{5};{6};{7};{8};{9};{10};{11};{12};{13};{14};{15};{16};{17};{18};{19};{20};{21};{22};{23};{24};{25};{26};{27};{28};{29};{30};{31};{32};{33};{34};{35};{36};{37};{38};{39};{40};{41}{42}",
-                        "timestamp", "abs_m11", "abs_m12", "abs_m13", "abs_m14", "abs_m21", "abs_m22", "abs_m23", "abs_m24", "abs_m31", "abs_m32", "abs_m33", "abs_m34", "abs_m41", "abs_m42", "abs_m43", "abs_m44", "abs_x", "abs_y", "abs_z", "abs_w", "h_m11", "h_m12", "h_m13", "h_m14", "h_m21", "h_m22", "h_m23", "h_m24", "h_m31", "h_m32", "h_m33", "h_m34", "h_m41", "h_m42", "h_m43", "h_m44", "h_x", "h_y", "h_z", "h_w", "coord_type", Environment.NewLine);
-                    csvBones.Append(headerBones);
-
-                    for (int j = 0; j < _boneHistory[i].timestamp.Count; j++)
+                foreach (var bonePosition in _boneHistory)
+                {
+                    if (bonePosition.Timestamp.Count > 0)
                     {
-                        string time = _boneHistory[i].timestamp[j];
+                        csv = new StringBuilder();
+                        string firstTimestamp = bonePosition.Timestamp[0].ToString().Replace("-", "").Replace(":", "");
+                        filePath = Directory.GetCurrentDirectory() + "\\data\\" + firstTimestamp + "-bone-" + bonePosition.StartJoint.ToString() + "-" + bonePosition.EndJoint.ToString() + ".csv";
+                        header =
+                            string.Format("{0},{1},{2},{3},{4},{5},{6},{7},{8},{9},{10},{11},{12},{13},{14},{15},{16},{17},{18},{19},{20},{21},{22},{23},{24},{25},{26},{27},{28},{29},{30},{31},{32},{33},{34},{35},{36},{37},{38},{39},{40},{41}{42}",
+                            "timestamp", "abs_m11", "abs_m12", "abs_m13", "abs_m14", "abs_m21", "abs_m22", "abs_m23", "abs_m24", "abs_m31", "abs_m32", "abs_m33", "abs_m34", "abs_m41", "abs_m42", "abs_m43", "abs_m44", "abs_x", "abs_y", "abs_z", "abs_w", "h_m11", "h_m12", "h_m13", "h_m14", "h_m21", "h_m22", "h_m23", "h_m24", "h_m31", "h_m32", "h_m33", "h_m34", "h_m41", "h_m42", "h_m43", "h_m44", "h_x", "h_y", "h_z", "h_w", "coord_type", Environment.NewLine);
+                        csv.Append(header);
 
-                        string abs_m11 = _boneHistory[i].absMatrix[j].M11.ToString();
-                        string abs_m12 = _boneHistory[i].absMatrix[j].M12.ToString();
-                        string abs_m13 = _boneHistory[i].absMatrix[j].M13.ToString();
-                        string abs_m14 = _boneHistory[i].absMatrix[j].M14.ToString();
-                        string abs_m21 = _boneHistory[i].absMatrix[j].M21.ToString();
-                        string abs_m22 = _boneHistory[i].absMatrix[j].M22.ToString();
-                        string abs_m23 = _boneHistory[i].absMatrix[j].M23.ToString();
-                        string abs_m24 = _boneHistory[i].absMatrix[j].M24.ToString();
-                        string abs_m31 = _boneHistory[i].absMatrix[j].M31.ToString();
-                        string abs_m32 = _boneHistory[i].absMatrix[j].M32.ToString();
-                        string abs_m33 = _boneHistory[i].absMatrix[j].M33.ToString();
-                        string abs_m34 = _boneHistory[i].absMatrix[j].M34.ToString();
-                        string abs_m41 = _boneHistory[i].absMatrix[j].M41.ToString();
-                        string abs_m42 = _boneHistory[i].absMatrix[j].M42.ToString();
-                        string abs_m43 = _boneHistory[i].absMatrix[j].M43.ToString();
-                        string abs_m44 = _boneHistory[i].absMatrix[j].M44.ToString();
+                        for (int j = 0; j < bonePosition.Timestamp.Count; j++)
+                        {
+                            string timestamp = bonePosition.Timestamp[j];
 
-                        string abs_x = _boneHistory[i].absQuaternion[j].X.ToString();
-                        string abs_y = _boneHistory[i].absQuaternion[j].Y.ToString();
-                        string abs_z = _boneHistory[i].absQuaternion[j].Z.ToString();
-                        string abs_w = _boneHistory[i].absQuaternion[j].W.ToString();
+                            string abs_m11 = bonePosition.AbsMatrix[j].M11.ToString();
+                            string abs_m12 = bonePosition.AbsMatrix[j].M12.ToString();
+                            string abs_m13 = bonePosition.AbsMatrix[j].M13.ToString();
+                            string abs_m14 = bonePosition.AbsMatrix[j].M14.ToString();
+                            string abs_m21 = bonePosition.AbsMatrix[j].M21.ToString();
+                            string abs_m22 = bonePosition.AbsMatrix[j].M22.ToString();
+                            string abs_m23 = bonePosition.AbsMatrix[j].M23.ToString();
+                            string abs_m24 = bonePosition.AbsMatrix[j].M24.ToString();
+                            string abs_m31 = bonePosition.AbsMatrix[j].M31.ToString();
+                            string abs_m32 = bonePosition.AbsMatrix[j].M32.ToString();
+                            string abs_m33 = bonePosition.AbsMatrix[j].M33.ToString();
+                            string abs_m34 = bonePosition.AbsMatrix[j].M34.ToString();
+                            string abs_m41 = bonePosition.AbsMatrix[j].M41.ToString();
+                            string abs_m42 = bonePosition.AbsMatrix[j].M42.ToString();
+                            string abs_m43 = bonePosition.AbsMatrix[j].M43.ToString();
+                            string abs_m44 = bonePosition.AbsMatrix[j].M44.ToString();
 
-                        string h_m11 = _boneHistory[i].hierMatrix[j].M11.ToString();
-                        string h_m12 = _boneHistory[i].hierMatrix[j].M12.ToString();
-                        string h_m13 = _boneHistory[i].hierMatrix[j].M13.ToString();
-                        string h_m14 = _boneHistory[i].hierMatrix[j].M14.ToString();
-                        string h_m21 = _boneHistory[i].hierMatrix[j].M21.ToString();
-                        string h_m22 = _boneHistory[i].hierMatrix[j].M22.ToString();
-                        string h_m23 = _boneHistory[i].hierMatrix[j].M23.ToString();
-                        string h_m24 = _boneHistory[i].hierMatrix[j].M24.ToString();
-                        string h_m31 = _boneHistory[i].hierMatrix[j].M31.ToString();
-                        string h_m32 = _boneHistory[i].hierMatrix[j].M32.ToString();
-                        string h_m33 = _boneHistory[i].hierMatrix[j].M33.ToString();
-                        string h_m34 = _boneHistory[i].hierMatrix[j].M34.ToString();
-                        string h_m41 = _boneHistory[i].hierMatrix[j].M41.ToString();
-                        string h_m42 = _boneHistory[i].hierMatrix[j].M42.ToString();
-                        string h_m43 = _boneHistory[i].hierMatrix[j].M43.ToString();
-                        string h_m44 = _boneHistory[i].hierMatrix[j].M44.ToString();
+                            string abs_x = bonePosition.AbsQuaternion[j].X.ToString();
+                            string abs_y = bonePosition.AbsQuaternion[j].Y.ToString();
+                            string abs_z = bonePosition.AbsQuaternion[j].Z.ToString();
+                            string abs_w = bonePosition.AbsQuaternion[j].W.ToString();
 
-                        string h_x = _boneHistory[i].hierQuaternion[j].X.ToString();
-                        string h_y = _boneHistory[i].hierQuaternion[j].Y.ToString();
-                        string h_z = _boneHistory[i].hierQuaternion[j].Z.ToString();
-                        string h_w = _boneHistory[i].hierQuaternion[j].W.ToString();
+                            string h_m11 = bonePosition.HierMatrix[j].M11.ToString();
+                            string h_m12 = bonePosition.HierMatrix[j].M12.ToString();
+                            string h_m13 = bonePosition.HierMatrix[j].M13.ToString();
+                            string h_m14 = bonePosition.HierMatrix[j].M14.ToString();
+                            string h_m21 = bonePosition.HierMatrix[j].M21.ToString();
+                            string h_m22 = bonePosition.HierMatrix[j].M22.ToString();
+                            string h_m23 = bonePosition.HierMatrix[j].M23.ToString();
+                            string h_m24 = bonePosition.HierMatrix[j].M24.ToString();
+                            string h_m31 = bonePosition.HierMatrix[j].M31.ToString();
+                            string h_m32 = bonePosition.HierMatrix[j].M32.ToString();
+                            string h_m33 = bonePosition.HierMatrix[j].M33.ToString();
+                            string h_m34 = bonePosition.HierMatrix[j].M34.ToString();
+                            string h_m41 = bonePosition.HierMatrix[j].M41.ToString();
+                            string h_m42 = bonePosition.HierMatrix[j].M42.ToString();
+                            string h_m43 = bonePosition.HierMatrix[j].M43.ToString();
+                            string h_m44 = bonePosition.HierMatrix[j].M44.ToString();
 
-                        string type = _boneHistory[i].coordinateType[j].ToString();
+                            string h_x = bonePosition.HierQuaternion[j].X.ToString();
+                            string h_y = bonePosition.HierQuaternion[j].Y.ToString();
+                            string h_z = bonePosition.HierQuaternion[j].Z.ToString();
+                            string h_w = bonePosition.HierQuaternion[j].W.ToString();
 
-                        var dataBones =
-                            string.Format("{0};{1};{2};{3};{4};{5};{6};{7};{8};{9};{10};{11};{12};{13};{14};{15};{16};{17};{18};{19};{20};{21};{22};{23};{24};{25};{26};{27};{28};{29};{30};{31};{32};{33};{34};{35};{36};{37};{38};{39};{40};{41}{42}",
-                            time, abs_m11, abs_m12, abs_m13, abs_m14, abs_m21, abs_m22, abs_m23, abs_m24, abs_m31, abs_m32, abs_m33, abs_m34, abs_m41, abs_m42, abs_m43, abs_m44, abs_x, abs_y, abs_z, abs_w, h_m11, h_m12, h_m13, h_m14, h_m21, h_m22, h_m23, h_m24, h_m31, h_m32, h_m33, h_m34, h_m41, h_m42, h_m43, h_m44, h_x, h_y, h_z, h_w, type, Environment.NewLine);
-                        csvBones.Append(dataBones);
+                            string type = bonePosition.CoordinateType[j].ToString();
+
+                            var data =
+                                string.Format("{0},{1},{2},{3},{4},{5},{6},{7},{8},{9},{10},{11},{12},{13},{14},{15},{16},{17},{18},{19},{20},{21},{22},{23},{24},{25},{26},{27},{28},{29},{30},{31},{32},{33},{34},{35},{36},{37},{38},{39},{40},{41}{42}",
+                                timestamp, abs_m11, abs_m12, abs_m13, abs_m14, abs_m21, abs_m22, abs_m23, abs_m24, abs_m31, abs_m32, abs_m33, abs_m34, abs_m41, abs_m42, abs_m43, abs_m44, abs_x, abs_y, abs_z, abs_w, h_m11, h_m12, h_m13, h_m14, h_m21, h_m22, h_m23, h_m24, h_m31, h_m32, h_m33, h_m34, h_m41, h_m42, h_m43, h_m44, h_x, h_y, h_z, h_w, type, Environment.NewLine);
+                            csv.Append(data);
+                        }
+
+                        File.WriteAllText(filePath, csv.ToString());
+                        csv = null;
                     }
-
-                    File.WriteAllText(filePathBones, csvBones.ToString());
                 }
 
                 _jointHistory = null;
                 _boneHistory = null;
 
-                this.button_rec.Content = "Start recording";
+                button_rec.Content = "Start recording";
                 button_rec.Foreground = Brushes.Black;
                 button_rec.FontWeight = FontWeights.Normal;
                 _isRecording = false;
@@ -430,10 +436,15 @@ namespace KinectMotionCapture
 
         private void button_screenshot_Click(object sender, RoutedEventArgs e)
         {
-            string timestamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss-ffff");
+            string timestamp = DateTime.Now.ToString(TimestampFormat).Replace("-", "").Replace(":", "");
 
             Rect rect = new Rect(camera.Margin.Left, camera.Margin.Top, camera.ActualWidth, camera.ActualHeight);
-            RenderTargetBitmap rtb = new RenderTargetBitmap((int)rect.Right, (int)rect.Bottom, 96d, 96d, PixelFormats.Default);
+            RenderTargetBitmap rtb = new RenderTargetBitmap(
+                (int)(rect.Right / StreamDpiX * ScreenshotDpiX),
+                (int)(rect.Bottom / StreamDpiY * ScreenshotDpiY),
+                ScreenshotDpiX,
+                ScreenshotDpiY,
+                PixelFormats.Default);
             rtb.Render(camera);
             rtb.Render(canvas);
 
@@ -451,7 +462,7 @@ namespace KinectMotionCapture
 
         private void button_setBody_Click(object sender, RoutedEventArgs e)
         {
-            if (_kinect != null && _kinect.SkeletonStream != null)
+            if (_kinect != null && _kinect.SkeletonStream != null && _skeletons != null)
             {
                 if (!_kinect.SkeletonStream.AppChoosesSkeletons)
                 {
@@ -474,6 +485,43 @@ namespace KinectMotionCapture
                 {
                     _kinect.SkeletonStream.ChooseSkeletons(id);
                 }
+            }
+        }
+
+        private void button_kinect_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_isRunning)
+            {
+                bool isRunning = RunKinect();
+
+                if (isRunning)
+                {
+                    button_kinect.Content = "Stop motion capture";
+                    button_kinect.Foreground = Brushes.Red;
+                    button_kinect.FontWeight = FontWeights.Bold;
+                    _isRunning = true;
+                    button_setBody.IsEnabled = true;
+                    button_rec.IsEnabled = true;
+                    button_screenshot.IsEnabled = true;
+                    groupBox_smoothParams.IsEnabled = false;
+                }
+                else
+                {
+                    MessageBox.Show("Could not connect to Kinect camera.", "Connection error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+            else
+            {
+                StopKinect();
+
+                button_kinect.Content = "Start motion capture";
+                button_kinect.Foreground = Brushes.Black;
+                button_kinect.FontWeight = FontWeights.Normal;
+                _isRunning = false;
+                button_setBody.IsEnabled = false;
+                button_rec.IsEnabled = false;
+                button_screenshot.IsEnabled = false;
+                groupBox_smoothParams.IsEnabled = true;
             }
         }
     }
